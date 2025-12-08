@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Clock, CheckCircle, Loader2 } from 'lucide-react';
-import { supabase } from './supabaseClient';
+import { bookingService } from '../services/bookingService';
 
 interface TimeSlotsProps {
   selectedDate: Date;
@@ -76,69 +76,43 @@ const TimeSlots: React.FC<TimeSlotsProps> = ({
 
   const isSunday = selectedDate.getDay() === 0;
 
-  const fetchBookedSlots = async () => {
-    if (isSunday) {
-      setBookedSlots(timeSlots);
-      setIsLoading(false);
-      return;
-    }
-
-    setIsLoading(true);
-    const dateQuery = selectedDate.toISOString().split('T')[0];
-
-    // Nuk ka filtër për is_completed këtu, kështu që kthen të gjitha rezervimet, siç duhet.
-    const { data, error } = await supabase
-      .from('bookings')
-      .select('time_slot')
-      .eq('date', dateQuery);
-
-    if (error) {
-      console.error('Gabim gjatë marrjes së orareve të zëna:', error);
-      setBookedSlots([]);
-    } else if (data) {
-      const slots = data.map(
-        (booking: { time_slot: string }) => booking.time_slot
-      );
-      setBookedSlots(slots);
-    }
-    setIsLoading(false);
-    setIsLoading(false);
-  };
-
-  const checkBlockedDate = async () => {
-    // Reset state first
-    setIsBlockedDate(false);
-    setBlockReason(null);
-
-    const dateQuery = selectedDate.toISOString().split('T')[0];
-
-    // Check if date is blocked
-    const { data: blockedData, error: blockedError } = await supabase
-      .from('blocked_periods')
-      .select('reason')
-      .lte('start_date', dateQuery)
-      .gte('end_date', dateQuery)
-      .limit(1);
-
-    if (!blockedError && blockedData && blockedData.length > 0) {
-      setIsBlockedDate(true);
-      setBlockReason(blockedData[0].reason || 'Nuk ka termine për këtë datë.');
-      setIsLoading(false); // Stop loading if blocked
-      return true; // Return true indicating it IS blocked
-    }
-    return false; // Not blocked
-  };
-
   useEffect(() => {
     const loadData = async () => {
+      // Logic for sunday
+      if (isSunday) {
+        setBookedSlots(timeSlots);
+        setIsBlockedDate(false);
+        setIsLoading(false);
+        return;
+      }
+
       setIsLoading(true);
-      const blocked = await checkBlockedDate();
-      if (!blocked) {
-        await fetchBookedSlots();
+      try {
+        // 1. Check if blocked
+        const blockedStatus = await bookingService.checkBlockedDate(selectedDate);
+
+        if (blockedStatus.isBlocked) {
+          setIsBlockedDate(true);
+          setBlockReason(blockedStatus.reason);
+          setBookedSlots([]); // Doesn't matter, UI shows blocked script
+        } else {
+          setIsBlockedDate(false);
+          setBlockReason(null);
+
+          // 2. Fetch booked slots
+          const slots = await bookingService.getBookedSlots(selectedDate);
+          setBookedSlots(slots);
+        }
+      } catch (error) {
+        console.error('Error loading time slots:', error);
+        // Fallback or toast could go here, but component just shows empty list for now
+      } finally {
+        setIsLoading(false);
       }
     };
+
     loadData();
-  }, [selectedDate, refreshTrigger]);
+  }, [selectedDate, refreshTrigger, isSunday]);
 
   const isBooked = (time: string): boolean => bookedSlots.includes(time);
 
@@ -169,7 +143,7 @@ const TimeSlots: React.FC<TimeSlotsProps> = ({
         Zgjidhni orarin
       </h3>
 
-      {isLoading && !isSunday ? (
+      {isLoading ? (
         <div className="flex items-center justify-center h-48 text-gray-500 dark:text-gray-400">
           <Loader2 className="w-5 h-5 animate-spin mr-2" />
           Duke ngarkuar oraret...
@@ -181,7 +155,6 @@ const TimeSlots: React.FC<TimeSlotsProps> = ({
           <p className="opacity-90">{blockReason || 'Nuk ka termine të lira për këtë datë.'}</p>
         </div>
       ) : isPastDate ? (
-
         <div className="p-4 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 rounded-lg text-center font-medium">
           Kjo datë ka kaluar.
         </div>
@@ -194,24 +167,22 @@ const TimeSlots: React.FC<TimeSlotsProps> = ({
           {timeSlots.map((time) => {
             const booked = isBooked(time);
             const isSelected = selectedTime === time;
-            const past = isToday(selectedDate) && isPastTime(selectedDate, time); // Logjika e re
+            const past = isToday(selectedDate) && isPastTime(selectedDate, time);
 
-            // BLLOKU I RREGULLUAR PËR ADMIN
             if (isAdmin) {
               return (
                 <button
                   key={time}
                   onClick={() => {
-                    // Lejohet shtimi vetëm nëse nuk është zënë OSE nuk është orar i kaluar
                     if (!booked && !past && onAdminReserve) onAdminReserve(time, selectedDate);
                   }}
-                  disabled={booked || past} // Butoni është disabled nëse është zënë ose ka kaluar koha
+                  disabled={booked || past}
                   className={`
                     p-3 rounded-lg text-sm font-medium transition-all duration-200 flex items-center justify-center
                     ${booked
                       ? 'bg-red-100 text-red-600 cursor-not-allowed opacity-75 flex-col'
                       : past
-                        ? 'bg-red-200 text-red-700 cursor-not-allowed opacity-70' // Orari i kaluar
+                        ? 'bg-red-200 text-red-700 cursor-not-allowed opacity-70'
                         : 'bg-green-100 text-green-700 hover:bg-green-200 hover:scale-105 shadow-md'
                     }
                   `}
@@ -240,9 +211,8 @@ const TimeSlots: React.FC<TimeSlotsProps> = ({
                 </button>
               );
             }
-            // FUNDI I BLLOKUT TË ADMIN
 
-            // BLLOKU PËR KLIENTËT E RREGULLT
+            // Normal Client
             return (
               <button
                 key={time}

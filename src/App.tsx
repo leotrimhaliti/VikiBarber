@@ -1,69 +1,77 @@
 import React, { useState } from 'react';
-import { Scissors, Calendar as CalendarIcon, Clock, Check } from 'lucide-react';
+import { useSearchParams } from 'react-router-dom';
+import { Calendar as CalendarIcon, Clock, Check } from 'lucide-react';
 import Calendar from './components/Calendar';
 import TimeSlots from './components/TimeSlots';
 import BookingConfirmation from './components/BookingConfirmation';
-import { supabase } from './components/supabaseClient';
 import { ModeToggle } from './components/mode-toggle';
+import { bookingService } from './services/bookingService';
 
 function App() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [currentDate, setCurrentDate] = useState(new Date());
-  const [selectedDate, setSelectedDate] = useState<Date | null>(null);
-  const [selectedTime, setSelectedTime] = useState<string | null>(null);
-  const [step, setStep] = useState<'calendar' | 'time' | 'confirmation' | 'success'>('calendar');
+
+  // Derived state from URL
+  const dateParam = searchParams.get('date');
+  const timeParam = searchParams.get('time');
+  const successParam = searchParams.get('success');
+
+  const selectedDate = dateParam ? new Date(dateParam) : null;
+  const selectedTime = timeParam;
+
+  // Determine current step
+  let step: 'calendar' | 'time' | 'confirmation' | 'success' = 'calendar';
+  if (successParam === 'true') step = 'success';
+  else if (selectedDate && selectedTime) step = 'confirmation';
+  else if (selectedDate) step = 'time';
 
   const [isSaving, setIsSaving] = useState(false);
 
-  /**
-   * FUNKSIONI PËR INSERT NË SUPABASE
-   */
   const handleConfirmBooking = async (clientName: string, phoneNumber: string) => {
     if (!selectedDate || !selectedTime || !clientName.trim() || !phoneNumber.trim()) return;
 
     setIsSaving(true);
-
-    // Konverto selectedDate në formatin 'YYYY-MM-DD'
     const dateToInsert = selectedDate.toISOString().split('T')[0];
 
-    const newBookingData = {
-      date: dateToInsert,
-      time_slot: selectedTime,
-      client_name: clientName,
-      client_phone: phoneNumber,
-      service_type: 'Qethje flokësh (Barber)',
-    };
+    try {
+      await bookingService.createBooking({
+        date: dateToInsert,
+        time_slot: selectedTime,
+        client_name: clientName,
+        client_phone: phoneNumber,
+        service_type: 'Qethje flokësh (Barber)',
+      });
 
-    const { error } = await supabase
-      .from('bookings')
-      .insert([newBookingData]);
+      // Navigate to success
+      setSearchParams({ success: 'true' });
 
-    setIsSaving(false);
+      // Auto reset after 3 seconds
+      setTimeout(() => {
+        setSearchParams({});
+      }, 3000);
 
-    if (error) {
+    } catch (error: any) {
       console.error('Gabim gjatë rezervimit:', error.message);
       alert(`Gabim gjatë rezervimit: ${error.message}. Ju lutem provoni përsëri.`);
-    } else {
-      setStep('success');
-
-      // Pas 3 sekondave, kthehu te kalendari dhe bëj reset state-in
-      setTimeout(() => {
-        setStep('calendar');
-        setSelectedDate(null);
-        setSelectedTime(null);
-      }, 3000);
+    } finally {
+      setIsSaving(false);
     }
   };
 
-
   const handleDateSelect = (date: Date) => {
-    setSelectedDate(date);
-    setSelectedTime(null);
-    setStep('time');
+    // Format YYYY-MM-DD manually to avoid timezone issues
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    const dateStr = `${year}-${month}-${day}`;
+
+    setSearchParams({ date: dateStr });
   };
 
   const handleTimeSelect = (time: string) => {
-    setSelectedTime(time);
-    setStep('confirmation');
+    if (dateParam) {
+      setSearchParams({ date: dateParam, time });
+    }
   };
 
   const handleMonthChange = (direction: 'prev' | 'next') => {
@@ -77,13 +85,15 @@ function App() {
   };
 
   const handleCancelBooking = () => {
-    setStep('time');
+    if (dateParam) {
+      setSearchParams({ date: dateParam });
+    } else {
+      setSearchParams({});
+    }
   };
 
   const resetToCalendar = () => {
-    setStep('calendar');
-    setSelectedDate(null);
-    setSelectedTime(null);
+    setSearchParams({});
   };
 
   return (
@@ -185,7 +195,7 @@ function App() {
           {step === 'confirmation' && selectedDate && selectedTime && (
             <div className="space-y-6">
               <button
-                onClick={() => setStep('time')}
+                onClick={() => setSearchParams({ date: dateParam! })}
                 className="text-gray-700 dark:text-gray-300 hover:text-gray-800 dark:hover:text-white font-medium flex items-center transition-colors"
               >
                 ← Kthehu te oraret
@@ -210,6 +220,7 @@ function App() {
                   Rezervimi u konfirmua!
                 </h3>
                 <p className="text-gray-600 dark:text-gray-300 mb-6">
+                  Ju faleminderit që zgjodhët VikiBarber.
                 </p>
                 <div className="w-full h-1 bg-green-200 dark:bg-green-800 rounded-full overflow-hidden">
                   <div className="h-full bg-green-500 dark:bg-green-500 w-full animate-pulse"></div>

@@ -7,30 +7,12 @@ import TimeSlots from './TimeSlots';
 import { ModeToggle } from './mode-toggle';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
+import { bookingService } from '../services/bookingService';
+import { Booking } from '../types/types';
 
-interface Booking {
-  id: number;
-  date: string;
-  time_slot: string;
-  client_name: string;
-  client_phone: string;
-  service_type: string;
-  created_at: string;
-  is_completed: boolean;
-}
-
-// SHTESA E RE: Tipi për njoftimet Toast
 interface Toast {
   message: string;
   type: 'success' | 'error' | null;
-}
-
-// SHTESA E RE: Interface for Blocked Periods
-interface BlockedPeriod {
-  id: number;
-  start_date: string;
-  end_date: string;
-  reason?: string;
 }
 
 const AdminDashboard: React.FC = () => {
@@ -166,27 +148,23 @@ const AdminDashboard: React.FC = () => {
 
     setIsBlocking(true);
 
-    const { error } = await supabase
-      .from('blocked_periods')
-      .insert([
-        {
-          start_date: blockData.startDate,
-          end_date: blockData.endDate,
-          reason: blockData.reason
-        }
-      ]);
+    try {
+      await bookingService.blockPeriod({
+        start_date: blockData.startDate,
+        end_date: blockData.endDate,
+        reason: blockData.reason
+      });
 
-    setIsBlocking(false);
-
-    if (error) {
-      console.error('Error blocking dates:', error);
-      showToast(`Gabim: ${error.message}`, 'error');
-    } else {
       showToast('Periudha u bllokua me sukses!', 'success');
       setIsBlockModalOpen(false);
       setBlockData({ startDate: '', endDate: '', reason: '' });
       // Trigger refresh of TimeSlots to reflect blocked dates immediately
       setRefreshTimeSlots(prev => prev + 1);
+    } catch (error: any) {
+      console.error('Error blocking dates:', error);
+      showToast(`Gabim: ${error.message || 'Error blocking dates'}`, 'error');
+    } finally {
+      setIsBlocking(false);
     }
   };
 
@@ -195,28 +173,16 @@ const AdminDashboard: React.FC = () => {
     setIsLoading(true);
     setError(null);
 
-    let query = supabase
-      .from('bookings')
-      .select('*')
-      .eq('is_completed', false) // <-- FILTRI I RI
-      .order('date', { ascending: true })
-      .order('time_slot', { ascending: true });
-
-    if (selectedDate) {
-      const dateQuery = selectedDate.toISOString().split('T')[0];
-      query = query.eq('date', dateQuery);
-    }
-
-    const { data, error } = await query;
-
-    if (error) {
+    try {
+      const data = await bookingService.getBookings(selectedDate || undefined);
+      setBookings(data);
+    } catch (error: any) {
       console.error('Gabim gjatë marrjes së rezervimeve:', error);
       setError('Gabim. Kontrolloni RLS për SELECT në tabelën "bookings".');
       setBookings([]);
-    } else if (data) {
-      setBookings(data as Booking[]);
+    } finally {
+      setIsLoading(false);
     }
-    setIsLoading(false);
   };
 
   useEffect(() => {
@@ -235,30 +201,17 @@ const AdminDashboard: React.FC = () => {
     if (!bookingToDelete || !session || !isAdmin) return;
 
     const bookingId = bookingToDelete;
-    // Reset state before async to close modal immediately or after? 
-    // Usually better to keep it open if it loads, but for simplicity let's do optimistic close or loading state.
-    // We'll keep it simple: call delete, then close.
 
-    // We can add a 'isDeleting' state if we want loader, but for now just function.
-
-    const { error } = await supabase
-      .from('bookings')
-      .delete()
-      .eq('id', bookingId);
-
-    // Always clear the modal state regardless of outcome to avoid stuck UI, or only on success?
-    // Let's clear on finish.
-    setBookingToDelete(null);
-
-    if (error) {
-      console.error('Gabim gjatë fshirjes:', error);
-      showToast(`Gabim gjatë fshirjes: ${error.message}`, 'error'); // Zëvendësuar alert
-    } else {
-      showToast('Rezervimi u fshi me sukses!', 'success'); // Zëvendësuar alert
-      // Zëvendësojme rifreskimin me setBookings direkt
+    try {
+      await bookingService.deleteBooking(bookingId);
+      showToast('Rezervimi u fshi me sukses!', 'success');
       setBookings(prev => prev.filter(booking => booking.id !== bookingId));
-      // Trigger rifreskimin e TimeSlots
       setRefreshTimeSlots(prev => prev + 1);
+    } catch (error: any) {
+      console.error('Gabim gjatë fshirjes:', error);
+      showToast(`Gabim gjatë fshirjes: ${error.message}`, 'error');
+    } finally {
+      setBookingToDelete(null);
     }
   };
 
@@ -266,20 +219,16 @@ const AdminDashboard: React.FC = () => {
   const handleMarkCompleted = async (bookingId: number) => {
     if (!session || !isAdmin) return;
 
-    const { error } = await supabase
-      .from('bookings')
-      .update({ is_completed: true })
-      .eq('id', bookingId);
-
-    if (error) {
-      console.error('Gabim gjatë shënimit si të kryer:', error);
-      showToast(`Gabim gjatë përditësimit: ${error.message}. Kontrollo RLS Policy (UPDATE).`, 'error');
-    } else {
+    try {
+      await bookingService.completeBooking(bookingId);
       // Zëvendësojme rifreskimin me setBookings direkt
       setBookings(prev => prev.filter(booking => booking.id !== bookingId));
       showToast('Rezervimi u shënua si i kryer!', 'success');
       // Trigger rifreskimin e TimeSlots
       setRefreshTimeSlots(prev => prev + 1);
+    } catch (error: any) {
+      console.error('Gabim gjatë shënimit si të kryer:', error);
+      showToast(`Gabim gjatë përditësimit: ${error.message}. Kontrollo RLS Policy (UPDATE).`, 'error');
     }
   };
 
@@ -326,24 +275,16 @@ const AdminDashboard: React.FC = () => {
 
     const dateToInsert = manualBookingData.date.toISOString().split('T')[0];
 
-    const newBookingData = {
-      date: dateToInsert,
-      time_slot: manualBookingData.time,
-      client_name: manualBookingData.clientName.trim(),
-      client_phone: manualBookingData.phoneNumber.trim(),
-      service_type: 'Qethje flokësh (Barber)',
-    };
+    try {
+      await bookingService.createBooking({
+        date: dateToInsert,
+        time_slot: manualBookingData.time,
+        client_name: manualBookingData.clientName.trim(),
+        client_phone: manualBookingData.phoneNumber.trim(),
+        service_type: 'Qethje flokësh (Barber)'
+      });
 
-    const { error } = await supabase
-      .from('bookings')
-      .insert([newBookingData]);
-
-    setIsSavingManual(false);
-
-    if (error) {
-      showToast(`Gabim gjatë rezervimit: ${error.message}`, 'error'); // Zëvendësuar alert
-    } else {
-      showToast(`Rezervimi për ${manualBookingData.clientName} në ${manualBookingData.time} u shtua!`, 'success'); // Zëvendësuar alert
+      showToast(`Rezervimi për ${manualBookingData.clientName} në ${manualBookingData.time} u shtua!`, 'success');
       setIsManualBookingOpen(false);
 
       // RIFRESKIMI DIREKT PËR LISTËN E REZERVIMEVE TË ADMIN DASHBOARDIT
@@ -351,6 +292,10 @@ const AdminDashboard: React.FC = () => {
 
       // SHTESA E RE: TRIGGER PËR RIFRESKIMIN E TimeSlots
       setRefreshTimeSlots(prev => prev + 1);
+    } catch (error: any) {
+      showToast(`Gabim gjatë rezervimit: ${error.message}`, 'error');
+    } finally {
+      setIsSavingManual(false);
     }
   };
 
@@ -412,7 +357,7 @@ const AdminDashboard: React.FC = () => {
                 <Button
                   variant="outline"
                   onClick={() => setIsBlockModalOpen(true)}
-                  className="hidden sm:flex"
+                  className="flex"
                 >
                   <CalendarIcon className="w-4 h-4 mr-2" />
                   Blloko Datat
