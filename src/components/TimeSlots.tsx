@@ -21,10 +21,12 @@ const TimeSlots: React.FC<TimeSlotsProps> = ({
 }) => {
   const [bookedSlots, setBookedSlots] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isBlockedDate, setIsBlockedDate] = useState(false);
+  const [blockReason, setBlockReason] = useState<string | null>(null);
 
   const generateTimeSlots = (): string[] => {
     const slots: string[] = [];
-    const startHour = 9;
+    const startHour = 8;
     const endHour = 20;
 
     for (let hour = startHour; hour < endHour; hour++) {
@@ -100,10 +102,42 @@ const TimeSlots: React.FC<TimeSlotsProps> = ({
       setBookedSlots(slots);
     }
     setIsLoading(false);
+    setIsLoading(false);
+  };
+
+  const checkBlockedDate = async () => {
+    // Reset state first
+    setIsBlockedDate(false);
+    setBlockReason(null);
+
+    const dateQuery = selectedDate.toISOString().split('T')[0];
+
+    // Check if date is blocked
+    const { data: blockedData, error: blockedError } = await supabase
+      .from('blocked_periods')
+      .select('reason')
+      .lte('start_date', dateQuery)
+      .gte('end_date', dateQuery)
+      .limit(1);
+
+    if (!blockedError && blockedData && blockedData.length > 0) {
+      setIsBlockedDate(true);
+      setBlockReason(blockedData[0].reason || 'Nuk ka termine për këtë datë.');
+      setIsLoading(false); // Stop loading if blocked
+      return true; // Return true indicating it IS blocked
+    }
+    return false; // Not blocked
   };
 
   useEffect(() => {
-    fetchBookedSlots();
+    const loadData = async () => {
+      setIsLoading(true);
+      const blocked = await checkBlockedDate();
+      if (!blocked) {
+        await fetchBookedSlots();
+      }
+    };
+    loadData();
   }, [selectedDate, refreshTrigger]);
 
   const isBooked = (time: string): boolean => bookedSlots.includes(time);
@@ -129,23 +163,30 @@ const TimeSlots: React.FC<TimeSlotsProps> = ({
     selectedDate.setHours(0, 0, 0, 0) < new Date().setHours(0, 0, 0, 0);
 
   return (
-    <div className="bg-white p-6 rounded-xl shadow-md h-full">
-      <h3 className="text-xl font-semibold text-gray-800 mb-4 flex items-center">
+    <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-md h-full transition-colors duration-300">
+      <h3 className="text-xl font-semibold text-gray-800 dark:text-white mb-4 flex items-center">
         <Clock className="w-5 h-5 mr-2" />
         Zgjidhni orarin
       </h3>
 
       {isLoading && !isSunday ? (
-        <div className="flex items-center justify-center h-48 text-gray-500">
+        <div className="flex items-center justify-center h-48 text-gray-500 dark:text-gray-400">
           <Loader2 className="w-5 h-5 animate-spin mr-2" />
           Duke ngarkuar oraret...
         </div>
+      ) : isBlockedDate ? (
+        <div className="p-6 bg-red-50 dark:bg-red-900/20 text-red-800 dark:text-red-300 rounded-lg text-center flex flex-col items-center justify-center h-48">
+          <CheckCircle className="w-12 h-12 mb-3 opacity-50" />
+          <h4 className="text-lg font-bold mb-1">Mbyllur</h4>
+          <p className="opacity-90">{blockReason || 'Nuk ka termine të lira për këtë datë.'}</p>
+        </div>
       ) : isPastDate ? (
-        <div className="p-4 bg-red-100 text-red-700 rounded-lg text-center font-medium">
+
+        <div className="p-4 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 rounded-lg text-center font-medium">
           Kjo datë ka kaluar.
         </div>
       ) : isSunday ? (
-        <div className="p-4 bg-red-100 text-red-700 rounded-lg text-center font-medium">
+        <div className="p-4 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 rounded-lg text-center font-medium">
           Sot jemi të mbyllur. Ju lutem zgjidhni një ditë tjetër.
         </div>
       ) : (
@@ -170,8 +211,8 @@ const TimeSlots: React.FC<TimeSlotsProps> = ({
                     ${booked
                       ? 'bg-red-100 text-red-600 cursor-not-allowed opacity-75 flex-col'
                       : past
-                      ? 'bg-red-200 text-red-700 cursor-not-allowed opacity-70' // Orari i kaluar
-                      : 'bg-green-100 text-green-700 hover:bg-green-200 hover:scale-105 shadow-md'
+                        ? 'bg-red-200 text-red-700 cursor-not-allowed opacity-70' // Orari i kaluar
+                        : 'bg-green-100 text-green-700 hover:bg-green-200 hover:scale-105 shadow-md'
                     }
                   `}
                 >
@@ -209,14 +250,13 @@ const TimeSlots: React.FC<TimeSlotsProps> = ({
                 disabled={booked || isSunday || past}
                 className={`
                   p-3 text-sm rounded-lg font-medium transition-all duration-200 flex items-center justify-center
-                  ${
-                    booked || isSunday
-                      ? 'bg-red-100 text-red-600 cursor-not-allowed opacity-75 flex-col'
-                      : past
+                  ${booked || isSunday
+                    ? 'bg-red-100 text-red-600 cursor-not-allowed opacity-75 flex-col'
+                    : past
                       ? 'bg-red-200 text-red-700 cursor-not-allowed opacity-70'
                       : isSelected
-                      ? 'bg-gray-800 text-white shadow-lg transform scale-105'
-                      : 'bg-gray-50 text-gray-700 hover:bg-gray-100 hover:text-gray-800 hover:scale-105'
+                        ? 'bg-gray-800 text-white shadow-lg transform scale-105'
+                        : 'bg-gray-50 text-gray-700 hover:bg-gray-100 hover:text-gray-800 hover:scale-105'
                   }
                 `}
               >
@@ -231,10 +271,10 @@ const TimeSlots: React.FC<TimeSlotsProps> = ({
                     </span>
                   </div>
                 ) : past ? (
-                   <div className="flex flex-col items-center space-y-1 text-red-700">
-                      <span className="font-semibold">{time}</span>
-                      <span className="text-xs font-normal">Ka Kalur</span>
-                    </div>
+                  <div className="flex flex-col items-center space-y-1 text-red-700">
+                    <span className="font-semibold">{time}</span>
+                    <span className="text-xs font-normal">Ka Kalur</span>
+                  </div>
                 ) : (
                   time
                 )}
@@ -245,8 +285,8 @@ const TimeSlots: React.FC<TimeSlotsProps> = ({
       )}
 
       {selectedTime && !isAdmin && !isSunday && (
-        <div className="mt-6 p-4 bg-blue-50 rounded-lg">
-          <p className="text-gray-800 font-medium">
+        <div className="mt-6 p-4 bg-blue-50 dark:bg-blue-900/30 rounded-lg">
+          <p className="text-gray-800 dark:text-gray-200 font-medium">
             Ora e zgjedhur: {selectedTime} - {formatDateShqip(selectedDate)}
           </p>
         </div>

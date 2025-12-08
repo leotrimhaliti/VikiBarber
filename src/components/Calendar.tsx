@@ -64,30 +64,30 @@ const Calendar: React.FC<CalendarProps> = ({
   };
 
   return (
-    <div className="bg-white p-6 rounded-xl shadow-lg">
+    <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-lg transition-colors duration-300">
       <div className="flex justify-between items-center mb-4">
         <button
           onClick={() => onMonthChange('prev')}
-          className="p-2 rounded-full hover:bg-gray-100"
+          className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
           aria-label="Muaji i mëparshëm"
         >
-          <ChevronLeft className="w-5 h-5 text-gray-600" />
+          <ChevronLeft className="w-5 h-5 text-gray-600 dark:text-gray-300" />
         </button>
-        <h2 className="text-xl font-bold text-gray-800">
+        <h2 className="text-xl font-bold text-gray-800 dark:text-white">
           {monthNames[currentDate.getMonth()]} {currentDate.getFullYear()}
         </h2>
         <button
           onClick={() => onMonthChange('next')}
-          className="p-2 rounded-full hover:bg-gray-100"
+          className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
           aria-label="Muaji tjetër"
         >
-          <ChevronRight className="w-5 h-5 text-gray-600" />
+          <ChevronRight className="w-5 h-5 text-gray-600 dark:text-gray-300" />
         </button>
       </div>
 
       <div className="grid grid-cols-7 gap-1 mb-2">
         {dayNames.map((day) => (
-          <div key={day} className="p-2 text-center text-sm font-medium text-gray-500">
+          <div key={day} className="p-2 text-center text-sm font-medium text-gray-500 dark:text-gray-400">
             {day}
           </div>
         ))}
@@ -115,16 +115,15 @@ const Calendar: React.FC<CalendarProps> = ({
               disabled={isDisabled}
               className={`
                 p-3 text-sm rounded-lg transition-all duration-200 hover:scale-105
-                ${
-                  isSunday
-                    ? 'text-red-400 bg-red-50 cursor-not-allowed'
-                    : isPast
-                    ? 'text-red-400 bg-red-50 cursor-not-allowed'
+                ${isSunday
+                  ? 'text-red-400 bg-red-50 dark:bg-red-900/20 dark:text-red-400 cursor-not-allowed'
+                  : isPast
+                    ? 'text-red-400 bg-red-50 dark:bg-red-900/20 dark:text-red-400 cursor-not-allowed'
                     : isCurrentMonthDate
-                    ? isSelectedDate
-                      ? 'bg-gray-800 text-white shadow-lg'
-                      : 'text-gray-800 hover:bg-gray-50 hover:text-gray-700 cursor-pointer'
-                    : 'text-gray-300 cursor-not-allowed'
+                      ? isSelectedDate
+                        ? 'bg-gray-800 dark:bg-gray-600 text-white shadow-lg'
+                        : 'text-gray-800 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 hover:text-gray-700 dark:hover:text-white cursor-pointer'
+                      : 'text-gray-300 dark:text-gray-600 cursor-not-allowed'
                 }
                 ${!isCurrentMonthDate && 'opacity-30'}
               `}

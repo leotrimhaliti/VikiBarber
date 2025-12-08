@@ -1,6 +1,11 @@
 import React, { useState } from 'react';
 import { supabase } from './supabaseClient';
-import { LogIn, User, Lock, Loader2 } from 'lucide-react';
+import { User, Lock, Loader2 } from 'lucide-react';
+import { Button } from './ui/button';
+import { Input } from './ui/input';
+import { Label } from './ui/label';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from './ui/card';
+import { ModeToggle } from './mode-toggle';
 
 const Auth: React.FC = () => {
   const [email, setEmail] = useState('');
@@ -21,79 +26,98 @@ const Auth: React.FC = () => {
     if (error) {
       console.error('Gabim në Kyçje:', error.message);
       setMessage(`Gabim në kyçje: ${error.message}. Kontrolloni të dhënat.`);
+      setLoading(false);
     } else {
       setMessage('Kyçja u bë me sukses! Duke u ridrejtuar...');
+      // Keep loading true while redirecting/parent updates
     }
-
-    setLoading(false);
   };
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-gray-100 p-4">
-      <div className="w-full max-w-md bg-white p-8 rounded-xl shadow-2xl">
-        <div className="text-center mb-6">
-          <LogIn className="w-8 h-8 text-gray-800 mx-auto mb-3" />
-          <h2 className="text-2xl font-bold text-gray-800">Kyçu si Administrator</h2>
-          <p className="text-sm text-gray-500">Për të menaxhuar rezervimet</p>
-        </div>
-
-        <form onSubmit={handleLogin} className="space-y-4">
-          <div>
-            <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">
-              Email
-            </label>
-            <div className="relative">
-              <User className="w-5 h-5 text-gray-400 absolute left-3 top-1/2 transform -translate-y-1/2" />
-              <input
-                id="email"
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="email@pronari.com"
-                required
-                className="w-full py-3 pl-10 pr-4 border border-gray-300 rounded-lg focus:ring-gray-800 focus:border-gray-800 transition"
-                disabled={loading}
-              />
-            </div>
-          </div>
-
-          <div>
-            <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1">
-              Fjalëkalimi
-            </label>
-            <div className="relative">
-              <Lock className="w-5 h-5 text-gray-400 absolute left-3 top-1/2 transform -translate-y-1/2" />
-              <input
-                id="password"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="Fjalëkalimi"
-                required
-                className="w-full py-3 pl-10 pr-4 border border-gray-300 rounded-lg focus:ring-gray-800 focus:border-gray-800 transition"
-                disabled={loading}
-              />
-            </div>
-          </div>
-
-          {message && (
-            <p className={`text-sm p-3 rounded-lg ${
-                message.includes('Gabim') ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'
-            }`}>
-              {message}
-            </p>
-          )}
-
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full py-3 bg-gray-800 text-white rounded-lg font-semibold hover:bg-gray-900 transition-colors disabled:opacity-50 flex items-center justify-center"
-          >
-            {loading && <Loader2 className="w-5 h-5 animate-spin mr-2" />}
-            {loading ? 'Duke Kyçur...' : 'Kyçu'}
-          </button>
-        </form>
+    <div className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-gray-50 via-white to-gray-50 dark:from-gray-900 dark:via-gray-950 dark:to-gray-900 p-4 transition-colors duration-300">
+      <div className="absolute top-4 right-4">
+        <ModeToggle />
       </div>
+      <Card className="w-full max-w-md shadow-xl border dark:border-gray-800">
+        <CardHeader className="space-y-1 text-center">
+          <div className="flex justify-center mb-4">
+            <img
+              src="/image.png"
+              alt="VikiBarber Logo"
+              className="w-16 h-16 object-contain invert dark:invert-0"
+            />
+          </div>
+          <CardTitle className="text-2xl font-bold tracking-tight">
+            Viki Barber
+          </CardTitle>
+          <CardDescription>
+            Hyni që të menaxhoni rezervimet
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={handleLogin} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="email">Email</Label>
+              <div className="relative">
+                <User className="absolute left-3 top-2.5 h-5 w-5 text-muted-foreground" />
+                <Input
+                  id="email"
+                  type="email"
+                  placeholder="email@example.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="pl-10 h-10"
+                  required
+                  disabled={loading}
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="password">Fjalekalimi</Label>
+              <div className="relative">
+                <Lock className="absolute left-3 top-2.5 h-5 w-5 text-muted-foreground" />
+                <Input
+                  id="password"
+                  type="password"
+                  placeholder="••••••••"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="pl-10 h-10"
+                  required
+                  disabled={loading}
+                />
+              </div>
+            </div>
+
+            {message && (
+              <div
+                className={`text-sm p-3 rounded-md flex items-center gap-2 ${message.includes('Gabim')
+                  ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400'
+                  : 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
+                  }`}
+              >
+                {message}
+              </div>
+            )}
+
+            <Button
+              type="submit"
+              className="w-full h-11 text-base font-medium"
+              disabled={loading}
+            >
+              {loading ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Duke u kyçur...
+                </>
+              ) : (
+                'Kyçu'
+              )}
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
     </div>
   );
 };
