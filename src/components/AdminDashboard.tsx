@@ -344,23 +344,26 @@ const AdminDashboard: React.FC = () => {
       <div className="max-w-7xl mx-auto p-4 sm:p-6 lg:p-8">
         {/* Header */}
         <Card className="mb-6">
-          <CardHeader>
-            <div className="flex justify-between items-center">
-              <div className="flex items-center">
+          <CardHeader className="p-4 sm:p-6">
+            <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
+              {/* Logo - centered on mobile, left on desktop */}
+              <div className="flex items-center justify-center sm:justify-start w-full sm:w-auto">
                 <img
                   src="/image.png"
                   alt="VikiBarber Logo"
-                  className="h-16 w-auto object-contain invert dark:invert-0 transition-opacity hover:opacity-80"
+                  className="h-12 sm:h-16 w-auto object-contain invert dark:invert-0 transition-opacity hover:opacity-80"
                 />
               </div>
-              <div className="flex gap-2 items-center">
+              {/* Action buttons - full width on mobile, auto on desktop */}
+              <div className="flex flex-wrap justify-center sm:justify-end gap-2 items-center w-full sm:w-auto">
                 <Button
                   variant="outline"
                   onClick={() => setIsBlockModalOpen(true)}
-                  className="flex"
+                  className="flex items-center text-xs sm:text-sm px-2 sm:px-4 h-9 sm:h-10"
                 >
-                  <CalendarIcon className="w-4 h-4 mr-2" />
-                  Blloko Datat
+                  <CalendarIcon className="w-4 h-4 mr-1 sm:mr-2" />
+                  <span className="sm:hidden">Blloko</span>
+                  <span className="hidden sm:inline">Blloko Datat</span>
                 </Button>
                 <ModeToggle />
                 <Button
@@ -368,10 +371,10 @@ const AdminDashboard: React.FC = () => {
                   size="sm"
                   onClick={handleLogout}
                   disabled={isLoading}
-                  className="gap-2"
+                  className="gap-1 sm:gap-2 text-xs sm:text-sm px-2 sm:px-4 h-9 sm:h-10"
                 >
                   <LogOut className="w-4 h-4" />
-                  Dil
+                  <span>Dil</span>
                 </Button>
               </div>
             </div>
