@@ -392,7 +392,12 @@ const AdminDashboard: React.FC = () => {
       // SHTESA E RE: TRIGGER PËR RIFRESKIMIN E TimeSlots
       setRefreshTimeSlots(prev => prev + 1);
     } catch (error: any) {
-      showToast(`Gabim gjatë rezervimit: ${error.message}`, 'error');
+      // Check for duplicate key violation
+      if (error.message?.includes('duplicate key') || error.message?.includes('unique constraint')) {
+        showToast('Gabim: Kjo kohë është tashmë e rezervuar!', 'error');
+      } else {
+        showToast(`Gabim gjatë rezervimit: ${error.message}`, 'error');
+      }
     } finally {
       setIsSavingManual(false);
     }

@@ -118,8 +118,12 @@ function App() {
       }, 3000);
 
     } catch (error: any) {
-      console.error('Gabim gjatë rezervimit:', error.message);
-      alert(`Gabim gjatë rezervimit: ${error.message}. Ju lutem provoni përsëri.`);
+      // Check for duplicate key violation (double booking)
+      if (error.message?.includes('duplicate key') || error.message?.includes('unique constraint')) {
+        alert('Kjo kohë sapo u rezervua nga dikush tjetër. Ju lutem zgjidhni një orar tjetër.');
+      } else {
+        alert(`Gabim gjatë rezervimit: ${error.message}. Ju lutem provoni përsëri.`);
+      }
     } finally {
       setIsSaving(false);
     }
