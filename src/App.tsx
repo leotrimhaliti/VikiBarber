@@ -1,15 +1,24 @@
-import React, { useState } from 'react';
+
+// ... previous imports ...
+import React, { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Calendar as CalendarIcon, Clock, Check, Phone } from 'lucide-react';
+import { Calendar as CalendarIcon, Clock, Check, Phone, User } from 'lucide-react';
 import Calendar from './components/Calendar';
 import TimeSlots from './components/TimeSlots';
 import BookingConfirmation from './components/BookingConfirmation';
+import MyBookings from './components/MyBookings'; // Import MyBookings
 import { ModeToggle } from './components/mode-toggle';
 import { bookingService } from './services/bookingService';
+import { Booking } from './types/types'; // Import Booking type
+import { supabase } from './components/supabaseClient';
 
 function App() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [currentDate, setCurrentDate] = useState(new Date());
+
+  // Local Booking State
+  const [myBookings, setMyBookings] = useState<Booking[]>([]);
+  const [showMyBookings, setShowMyBookings] = useState(false);
 
   // Derived state from URL
   const dateParam = searchParams.get('date');
@@ -20,27 +29,85 @@ function App() {
   const selectedTime = timeParam;
 
   // Determine current step
-  let step: 'calendar' | 'time' | 'confirmation' | 'success' = 'calendar';
-  if (successParam === 'true') step = 'success';
+  let step: 'calendar' | 'time' | 'confirmation' | 'success' | 'my-bookings' = 'calendar';
+  if (showMyBookings) step = 'my-bookings';
+  else if (successParam === 'true') step = 'success';
   else if (selectedDate && selectedTime) step = 'confirmation';
   else if (selectedDate) step = 'time';
 
   const [isSaving, setIsSaving] = useState(false);
 
+  // Load bookings from local storage on mount and Setup Realtime
+  useEffect(() => {
+    // 1. Load from Local Storage
+    const savedBookings = localStorage.getItem('user_bookings');
+    if (savedBookings) {
+      try {
+        setMyBookings(JSON.parse(savedBookings));
+      } catch (e) {
+        console.error('Failed to parse bookings', e);
+      }
+    }
+
+    // 2. Setup Realtime Listener for Deletions (Admin cancels user booking)
+    const channel = supabase
+      .channel('user_bookings_sync')
+      .on(
+        'postgres_changes',
+        {
+          event: 'DELETE',
+          schema: 'public',
+          table: 'bookings',
+        },
+        (payload: any) => {
+          const deletedId = payload.old.id;
+
+          setMyBookings((currentBookings) => {
+            // Check if this deleted booking is in our list
+            const exists = currentBookings.some(b => b.id == deletedId);
+
+            if (exists) {
+              // It's one of ours! Remove it.
+              const updated = currentBookings.filter(b => b.id != deletedId);
+              localStorage.setItem('user_bookings', JSON.stringify(updated));
+              // Optional: Alert the user if they are currently viewing the app? 
+              // Maybe just let it vanish or show a subtle indicator.
+              // For now, silent sync is better UX than a jarring alert, usually.
+              return updated;
+            }
+            return currentBookings;
+          });
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
+
   const handleConfirmBooking = async (clientName: string, phoneNumber: string) => {
     if (!selectedDate || !selectedTime || !clientName.trim() || !phoneNumber.trim()) return;
 
     setIsSaving(true);
-    const dateToInsert = selectedDate.toISOString().split('T')[0];
+    const year = selectedDate.getFullYear();
+    const month = String(selectedDate.getMonth() + 1).padStart(2, '0');
+    const day = String(selectedDate.getDate()).padStart(2, '0');
+    const dateToInsert = `${year}-${month}-${day}`;
 
     try {
-      await bookingService.createBooking({
+      const newBooking = await bookingService.createBooking({
         date: dateToInsert,
         time_slot: selectedTime,
         client_name: clientName,
         client_phone: phoneNumber,
         service_type: 'Qethje flokësh (Barber)',
       });
+
+      // Update Local Storage
+      const updatedBookings = [...myBookings, newBooking];
+      setMyBookings(updatedBookings);
+      localStorage.setItem('user_bookings', JSON.stringify(updatedBookings));
 
       // Navigate to success
       setSearchParams({ success: 'true' });
@@ -58,14 +125,19 @@ function App() {
     }
   };
 
+  const handleDeleteLocalBooking = (id: number) => {
+    const updatedBookings = myBookings.filter(b => b.id !== id);
+    setMyBookings(updatedBookings);
+    localStorage.setItem('user_bookings', JSON.stringify(updatedBookings));
+  };
+
   const handleDateSelect = (date: Date) => {
-    // Format YYYY-MM-DD manually to avoid timezone issues
     const year = date.getFullYear();
     const month = String(date.getMonth() + 1).padStart(2, '0');
     const day = String(date.getDate()).padStart(2, '0');
     const dateStr = `${year}-${month}-${day}`;
-
     setSearchParams({ date: dateStr });
+    setShowMyBookings(false);
   };
 
   const handleTimeSelect = (time: string) => {
@@ -94,12 +166,26 @@ function App() {
 
   const resetToCalendar = () => {
     setSearchParams({});
+    setShowMyBookings(false);
   };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-gray-50 dark:from-gray-900 dark:via-gray-950 dark:to-gray-900 transition-colors duration-300 overflow-hidden flex flex-col">
       <div className="container mx-auto px-4 py-8 flex-1 overflow-y-auto">
-        <div className="absolute top-4 right-4">
+        <div className="absolute top-4 right-4 flex gap-2">
+          {/* My Bookings Toggle */}
+          {myBookings.length > 0 && !showMyBookings && step !== 'success' && (
+            <button
+              onClick={() => {
+                setShowMyBookings(true);
+                setSearchParams({}); // Clear other params to show MyBookings view nicely
+              }}
+              className="px-4 py-2 bg-white dark:bg-gray-800 text-gray-800 dark:text-white rounded-lg shadow border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors flex items-center gap-2 text-sm font-medium"
+            >
+              <User className="w-4 h-4" />
+              Terminet e mia ({myBookings.length})
+            </button>
+          )}
           <ModeToggle />
         </div>
         {/* Header */}
@@ -123,31 +209,41 @@ function App() {
           </div>
         </div>
 
-        {/* Progress Steps */}
-        <div className="flex items-center justify-center mb-8">
-          <div className="flex items-center space-x-4">
-            <div className={`flex items-center ${step !== 'calendar' ? 'text-gray-800 dark:text-gray-200' : 'text-gray-400 dark:text-gray-500'}`}>
-              <div className={`w-10 h-10 rounded-full flex items-center justify-center ${step !== 'calendar' ? 'bg-gray-800 dark:bg-gray-600 text-white' : 'bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300'
-                }`}>
-                <CalendarIcon className="w-5 h-5" />
+        {/* Progress Steps (Hidden in MyBookings and Success) */}
+        {step !== 'my-bookings' && step !== 'success' && (
+          <div className="flex items-center justify-center mb-8">
+            <div className="flex items-center space-x-4">
+              <div className={`flex items-center ${step !== 'calendar' ? 'text-gray-800 dark:text-gray-200' : 'text-gray-400 dark:text-gray-500'}`}>
+                <div className={`w-10 h-10 rounded-full flex items-center justify-center ${step !== 'calendar' ? 'bg-gray-800 dark:bg-gray-600 text-white' : 'bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300'
+                  }`}>
+                  <CalendarIcon className="w-5 h-5" />
+                </div>
+                <span className="ml-2 font-medium">Data</span>
               </div>
-              <span className="ml-2 font-medium">Data</span>
-            </div>
 
-            <div className={`w-8 h-0.5 ${step === 'confirmation' || step === 'success' || step === 'time' ? 'bg-gray-800 dark:bg-gray-600' : 'bg-gray-300 dark:bg-gray-600'}`}></div>
+              <div className={`w-8 h-0.5 ${step === 'confirmation' || step === 'time' ? 'bg-gray-800 dark:bg-gray-600' : 'bg-gray-300 dark:bg-gray-600'}`}></div>
 
-            <div className={`flex items-center ${step === 'time' || step === 'confirmation' || step === 'success' ? 'text-gray-800 dark:text-gray-200' : 'text-gray-400 dark:text-gray-500'}`}>
-              <div className={`w-10 h-10 rounded-full flex items-center justify-center ${step === 'time' || step === 'confirmation' || step === 'success' ? 'bg-gray-800 dark:bg-gray-600 text-white' : 'bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300'
-                }`}>
-                <Clock className="w-5 h-5" />
+              <div className={`flex items-center ${step === 'time' || step === 'confirmation' ? 'text-gray-800 dark:text-gray-200' : 'text-gray-400 dark:text-gray-500'}`}>
+                <div className={`w-10 h-10 rounded-full flex items-center justify-center ${step === 'time' || step === 'confirmation' ? 'bg-gray-800 dark:bg-gray-600 text-white' : 'bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300'
+                  }`}>
+                  <Clock className="w-5 h-5" />
+                </div>
+                <span className="ml-2 font-medium">Ora</span>
               </div>
-              <span className="ml-2 font-medium">Ora</span>
             </div>
           </div>
-        </div>
+        )}
 
         {/* Main Content */}
         <div className="max-w-4xl mx-auto">
+          {step === 'my-bookings' && (
+            <MyBookings
+              bookings={myBookings}
+              onBack={() => setShowMyBookings(false)}
+              onDelete={handleDeleteLocalBooking}
+            />
+          )}
+
           {step === 'calendar' && (
             <div className="grid md:grid-cols-2 gap-8">
               <div>
@@ -230,6 +326,19 @@ function App() {
                 <p className="text-gray-600 dark:text-gray-300 mb-6">
                   Ju faleminderit që zgjodhët VikiBarber.
                 </p>
+
+                {/* My Bookings Button (New) */}
+                <button
+                  onClick={() => {
+                    // Clear success param and show my bookings
+                    setSearchParams({});
+                    setShowMyBookings(true);
+                  }}
+                  className="w-full py-3 px-4 bg-gray-800 dark:bg-gray-700 text-white rounded-lg hover:bg-gray-900 dark:hover:bg-gray-600 transition-colors font-medium mb-3"
+                >
+                  Shiko Terminet e mia
+                </button>
+
                 <div className="w-full h-1 bg-green-200 dark:bg-green-800 rounded-full overflow-hidden">
                   <div className="h-full bg-green-500 dark:bg-green-500 w-full animate-pulse"></div>
                 </div>

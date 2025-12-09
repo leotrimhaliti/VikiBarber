@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Clock, CheckCircle, Loader2 } from 'lucide-react';
 import { bookingService } from '../services/bookingService';
+import { supabase } from './supabaseClient';
 
 interface TimeSlotsProps {
   selectedDate: Date;
@@ -31,9 +32,7 @@ const TimeSlots: React.FC<TimeSlotsProps> = ({
 
     for (let hour = startHour; hour < endHour; hour++) {
       for (let minute = 0; minute < 60; minute += 30) {
-        const timeString = `${hour.toString().padStart(2, '0')}:${minute
-          .toString()
-          .padStart(2, '0')}`;
+        const timeString = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
         slots.push(timeString);
       }
     }
@@ -94,7 +93,7 @@ const TimeSlots: React.FC<TimeSlotsProps> = ({
         if (blockedStatus.isBlocked) {
           setIsBlockedDate(true);
           setBlockReason(blockedStatus.reason);
-          setBookedSlots([]); // Doesn't matter, UI shows blocked script
+          setBookedSlots([]);
         } else {
           setIsBlockedDate(false);
           setBlockReason(null);
@@ -105,13 +104,42 @@ const TimeSlots: React.FC<TimeSlotsProps> = ({
         }
       } catch (error) {
         console.error('Error loading time slots:', error);
-        // Fallback or toast could go here, but component just shows empty list for now
       } finally {
         setIsLoading(false);
       }
     };
 
     loadData();
+
+    // Realtime Subscription
+    const year = selectedDate.getFullYear();
+    const month = String(selectedDate.getMonth() + 1).padStart(2, '0');
+    const day = String(selectedDate.getDate()).padStart(2, '0');
+    const dateStr = `${year}-${month}-${day}`;
+
+    const channel = supabase
+      .channel(`timeslots_${dateStr}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*', // Listen to INSERT, UPDATE, DELETE
+          schema: 'public',
+          table: 'bookings',
+        },
+        (payload: any) => {
+          // Reload if the change is relevant to this date
+          // Optimization: Check if new date matches current view (or if generic delete)
+          if ((payload.new && payload.new.date === dateStr) || payload.eventType === 'DELETE') {
+            loadData();
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+
   }, [selectedDate, refreshTrigger, isSunday]);
 
   const isBooked = (time: string): boolean => bookedSlots.includes(time);

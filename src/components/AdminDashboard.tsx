@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Trash2, Calendar as CalendarIcon, Clock, User, Phone, Loader2, LogOut, Shield, X, Check } from 'lucide-react';
 import { supabase } from './supabaseClient';
 import Auth from './Auth';
@@ -26,6 +26,7 @@ const AdminDashboard: React.FC = () => {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState<Date | null>(new Date());
   const [selectedTime, setSelectedTime] = useState<string | null>(null);
+  const selectedDateRef = useRef(selectedDate);
 
   // STATE E RE PER REZERVIM MANUAL
   const [isManualBookingOpen, setIsManualBookingOpen] = useState(false);
@@ -46,6 +47,8 @@ const AdminDashboard: React.FC = () => {
     message: '',
     type: null,
   });
+
+  const timeoutRef = useRef<any>(null);
 
   // STATE PER PERIUDHAT E BLLOKUARA
   const [isBlockModalOpen, setIsBlockModalOpen] = useState(false);
@@ -73,12 +76,17 @@ const AdminDashboard: React.FC = () => {
   };
 
   // Funksioni për shfaqjen e toastit
-  const showToast = (message: string, type: 'success' | 'error') => {
+  const showToast = (message: string, type: 'success' | 'error', duration = 5000) => {
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+    }
     setToast({ message, type });
-    // Zhduk njoftimin pas 5 sekondash
-    setTimeout(() => {
-      setToast({ message: '', type: null });
-    }, 5000);
+
+    if (duration > 0) {
+      timeoutRef.current = setTimeout(() => {
+        setToast({ message: '', type: null });
+      }, duration);
+    }
   };
 
 
@@ -108,7 +116,7 @@ const AdminDashboard: React.FC = () => {
     } else {
       // Retry logic for transient errors (e.g. auth race conditions)
       if (retryCount < 3) {
-        console.log(`Retrying profile fetch (${retryCount + 1}/3)...`);
+
         fetchProfile(userId, retryCount + 1);
         return;
       }
@@ -118,6 +126,11 @@ const AdminDashboard: React.FC = () => {
     }
   }
 
+
+  // Keep ref updated
+  useEffect(() => {
+    selectedDateRef.current = selectedDate;
+  }, [selectedDate]);
 
   useEffect(() => {
     const { data: authListener } = supabase.auth.onAuthStateChange(
@@ -133,8 +146,91 @@ const AdminDashboard: React.FC = () => {
       }
     );
 
+    // Realtime listener for Cancellations, Insertions, Updates
+    const channel = supabase
+      .channel('public:bookings_admin')
+      .on(
+        'postgres_changes',
+        {
+          event: '*', // Listen for all events
+          schema: 'public',
+          table: 'bookings',
+        },
+        (payload: any) => {
+
+
+          // 1. HANDLE DELETE
+          if (payload.eventType === 'DELETE') {
+            const oldRecord = payload.old;
+            const bookingId = oldRecord.id;
+
+            // Try to get details directly from payload (requires REPLICA IDENTITY FULL)
+            const clientName = oldRecord.client_name;
+            const bookingDate = oldRecord.date;
+
+            setBookings((currentBookings) => {
+              // First try to find it in the current list (for active view)
+              const existingBooking = currentBookings.find(b => b.id == bookingId);
+
+              if (clientName && bookingDate) {
+                // We have full details from database
+                const [y, m, d] = bookingDate.split('-');
+                const formattedDate = `${d}.${m}.${y}`;
+                showToast(`${clientName} anuloi terminin me datë ${formattedDate}`, 'error', 0);
+              } else if (existingBooking) {
+                // Fallback: We found it in local state
+                showToast(`Termini i ores ${existingBooking.time_slot} per ${existingBooking.client_name} u anulua!`, 'error', 0);
+              } else {
+                // Fallback: No details available
+                showToast(`Një termin u anulua`, 'error', 0);
+              }
+
+              setRefreshTimeSlots(prev => prev + 1);
+              return currentBookings.filter(b => b.id != bookingId);
+            });
+          }
+
+          // 2. HANDLE INSERT (New Booking)
+          if (payload.eventType === 'INSERT') {
+            const newBooking = payload.new;
+            const currentRefDate = selectedDateRef.current; // Use Ref here!
+
+            // Check if matches currently selected date
+            if (currentRefDate) {
+              const year = currentRefDate.getFullYear();
+              const month = String(currentRefDate.getMonth() + 1).padStart(2, '0');
+              const day = String(currentRefDate.getDate()).padStart(2, '0');
+              const currentDateStr = `${year}-${month}-${day}`;
+
+              if (newBooking.date === currentDateStr) {
+                // Add to list and sort
+                setBookings(prev => {
+                  const updated = [...prev, newBooking];
+                  // Basic sort by time
+                  return updated.sort((a, b) => a.time_slot.localeCompare(b.time_slot));
+                });
+                showToast(`Rezervim i ri nga ${newBooking.client_name} në orën ${newBooking.time_slot}!`, 'success');
+                setRefreshTimeSlots(prev => prev + 1);
+              }
+            }
+          }
+
+          // 3. HANDLE UPDATE (e.g. Completed status)
+          if (payload.eventType === 'UPDATE') {
+            const updatedBooking = payload.new;
+            setBookings(prev => prev.map(b => b.id === updatedBooking.id ? updatedBooking : b));
+            // If it became completed, maybe remove it if we only show active?
+            // For now just update is fine.
+          }
+        }
+      )
+      .subscribe(() => {
+
+      });
+
     return () => {
       authListener?.subscription.unsubscribe();
+      supabase.removeChannel(channel);
     };
   }, []);
 
@@ -273,7 +369,10 @@ const AdminDashboard: React.FC = () => {
 
     setIsSavingManual(true);
 
-    const dateToInsert = manualBookingData.date.toISOString().split('T')[0];
+    const year = manualBookingData.date.getFullYear();
+    const month = String(manualBookingData.date.getMonth() + 1).padStart(2, '0');
+    const day = String(manualBookingData.date.getDate()).padStart(2, '0');
+    const dateToInsert = `${year}-${month}-${day}`;
 
     try {
       await bookingService.createBooking({
@@ -392,7 +491,7 @@ const AdminDashboard: React.FC = () => {
           <TimeSlots
             selectedDate={selectedDate || new Date()}
             selectedTime={selectedTime}
-            onTimeSelect={(time) => setSelectedTime(time)}
+            onTimeSelect={(time: string) => setSelectedTime(time)}
             isAdmin={true}
             onAdminReserve={handleAdminReserve}
             refreshTrigger={refreshTimeSlots}
@@ -555,10 +654,8 @@ const AdminDashboard: React.FC = () => {
             : 'bg-red-600 text-white'
             } flex items-center space-x-3`}
         >
-          {toast.type === 'success' ? (
+          {toast.type === 'success' && (
             <Check className="w-6 h-6" />
-          ) : (
-            <X className="w-6 h-6" />
           )}
           <p className="font-medium">{toast.message}</p>
           <button onClick={() => setToast({ message: '', type: null })} className="ml-4 p-1 rounded-full hover:bg-white hover:bg-opacity-20">

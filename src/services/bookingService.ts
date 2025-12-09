@@ -14,7 +14,10 @@ export const bookingService = {
             .order('time_slot', { ascending: true });
 
         if (date) {
-            const dateQuery = date.toISOString().split('T')[0];
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            const dateQuery = `${year}-${month}-${day}`;
             query = query.eq('date', dateQuery);
         }
 
@@ -27,11 +30,15 @@ export const bookingService = {
      * Fetch booked time slots for a specific date
      */
     async getBookedSlots(date: Date) {
-        const dateQuery = date.toISOString().split('T')[0];
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        const dateQuery = `${year}-${month}-${day}`;
+
         const { data, error } = await supabase
             .from('bookings')
             .select('time_slot')
-            .eq('date', dateQuery); // No is_completed filter, completed bookings still take up a slot? Or should they? usually yes.
+            .eq('date', dateQuery);
 
         if (error) throw error;
         return data.map((b: { time_slot: string }) => b.time_slot);
@@ -79,7 +86,11 @@ export const bookingService = {
      * Check if a date is blocked
      */
     async checkBlockedDate(date: Date) {
-        const dateQuery = date.toISOString().split('T')[0];
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        const dateQuery = `${year}-${month}-${day}`;
+
         const { data, error } = await supabase
             .from('blocked_periods')
             .select('reason')

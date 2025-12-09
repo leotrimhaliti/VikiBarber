@@ -51,7 +51,7 @@ const Auth: React.FC = () => {
             Viki Barber
           </CardTitle>
           <CardDescription>
-            Hyni që të menaxhoni rezervimet
+            Hyni qe ti menaxhoni rezervimet
           </CardDescription>
         </CardHeader>
         <CardContent>
